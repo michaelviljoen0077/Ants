@@ -176,6 +176,8 @@ export class Colony {
 
   /** Returns food delivered to the nest this tick (for the income window). */
   private updateAnt(ant: Ant, world: World, hash: SpatialHash<Ant>, daylight: number): number {
+    // Killed earlier this tick by another colony: it's removed in the death pass.
+    if (ant.health <= 0) return 0;
     ant.age++;
     if (ant.cooldown > 0) ant.cooldown--;
 
@@ -189,7 +191,7 @@ export class Colony {
     let enemyDist = Infinity;
     let allies = 0;
     hash.forEachInRange(ant.x, ant.y, sense, (other) => {
-      if (other === ant) return;
+      if (other === ant || other.health <= 0) return;
       const d = Math.hypot(other.x - ant.x, other.y - ant.y);
       if (d > sense) return;
       if (other.colonyId === this.id) allies++;
@@ -200,6 +202,7 @@ export class Colony {
     let foodDist = Infinity;
     if (ant.carry === 0) {
       for (const f of world.food) {
+        if (f.amount <= 0.5) continue;
         const d = Math.hypot(f.x - ant.x, f.y - ant.y);
         if (d < foodDist && d < sense) { foodDist = d; nearestFood = f; }
       }
@@ -327,7 +330,7 @@ export class Colony {
 
     // --- food & nest interactions ----------------------------------------------
     let delivered = 0;
-    if (ant.carry === 0 && nearestFood && ant.caste !== 'soldier') {
+    if (ant.carry === 0 && nearestFood && nearestFood.amount > 0.5 && ant.caste !== 'soldier') {
       const pickupRange = 6 + Math.sqrt(nearestFood.amount) * 0.7;
       if (foodDist < pickupRange) {
         const take = Math.min(8, nearestFood.amount);
@@ -366,7 +369,7 @@ export class Colony {
   }
 
   private handleBirths(generation: number): void {
-    if (this.ants.length >= CONFIG.maxPop) return;
+    if (this.ants.length === 0 || this.ants.length >= CONFIG.maxPop) return;
     if (this.foodStore < CONFIG.spawnCost + 25) return;
     // Need real income to grow, not just a stockpile.
     if (this.recentIncome < 2 && this.ants.length > 30) return;

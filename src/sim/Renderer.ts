@@ -1,4 +1,3 @@
-import { Ant } from './Ant';
 import { Simulation } from './Simulation';
 import { CONFIG } from './config';
 

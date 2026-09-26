@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Simulation } from './sim/Simulation';
 import { Renderer, Camera } from './sim/Renderer';
-import { Ant } from './sim/Ant';
 import { CONFIG } from './sim/config';
 import BrainViz from './ui/BrainViz';
 import Sparkline from './ui/Sparkline';
@@ -67,6 +66,8 @@ export default function App() {
   const [showAlarm, setShowAlarm] = useState(true);
   const [follow, setFollow] = useState(false);
   const [hud, setHud] = useState<HudSnap | null>(null);
+  // Stable identity so BrainViz doesn't restart its render loop on every HUD tick.
+  const getSelectedAnt = useCallback(() => simRef.current?.selected ?? null, []);
 
   // Refs mirror the control state so the rAF loop reads fresh values without re-binding.
   const ctl = useRef({ paused, speed, showTrails, showAlarm, follow });
@@ -77,9 +78,10 @@ export default function App() {
     const sim = simRef.current!;
     const renderer = new Renderer(canvas, sim);
 
-    // Dev nicety: ?ff=3000 warps the sim forward before the first frame.
-    const ff = parseInt(new URLSearchParams(window.location.search).get('ff') || '0', 10);
-    for (let i = 0; i < ff; i++) sim.update();
+    // Dev nicety: ?ff=3000 warps the sim forward. It runs in chunks across
+    // frames so the page stays responsive and the HUD shows progress.
+    const ffParam = parseInt(new URLSearchParams(window.location.search).get('ff') || '0', 10);
+    let ffRemaining = Number.isFinite(ffParam) ? Math.min(Math.max(ffParam, 0), 50000) : 0;
     let raf = 0;
     let alive = true;
 
@@ -91,16 +93,20 @@ export default function App() {
     resize();
     window.addEventListener('resize', resize);
 
+    const fitZoom = () =>
+      Math.min(canvas.clientWidth / CONFIG.worldW, canvas.clientHeight / CONFIG.worldH) * 0.96;
+
     // Initial camera: fit the whole world on screen.
-    camRef.current.zoom = Math.min(
-      canvas.clientWidth / CONFIG.worldW,
-      canvas.clientHeight / CONFIG.worldH,
-    ) * 0.96;
+    camRef.current.zoom = fitZoom();
 
     const loop = () => {
       if (!alive) return;
       const c = ctl.current;
-      if (!c.paused) {
+      if (ffRemaining > 0) {
+        const chunk = Math.min(ffRemaining, 150);
+        for (let i = 0; i < chunk; i++) sim.update();
+        ffRemaining -= chunk;
+      } else if (!c.paused) {
         for (let i = 0; i < c.speed; i++) sim.update();
       }
       if (c.follow && sim.selected) {
@@ -189,6 +195,7 @@ export default function App() {
       const dx = e.clientX - last.x;
       const dy = e.clientY - last.y;
       moved += Math.abs(dx) + Math.abs(dy);
+      if (moved >= 6 && ctl.current.follow) setFollow(false);
       camRef.current.x -= dx / camRef.current.zoom;
       camRef.current.y -= dy / camRef.current.zoom;
       last = { x: e.clientX, y: e.clientY };
@@ -215,12 +222,14 @@ export default function App() {
       const sy = e.clientY - rect.top;
       const before = screenToWorld(sx, sy);
       const cam = camRef.current;
-      cam.zoom = Math.max(0.25, Math.min(6, cam.zoom * (e.deltaY > 0 ? 0.88 : 1.14)));
+      const minZoom = Math.min(0.25, fitZoom());
+      cam.zoom = Math.max(minZoom, Math.min(6, cam.zoom * (e.deltaY > 0 ? 0.88 : 1.14)));
       const after = screenToWorld(sx, sy);
       cam.x += before.x - after.x;
       cam.y += before.y - after.y;
     };
     const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === ' ') { e.preventDefault(); setPaused((p) => !p); }
       else if (e.key === '1') setSpeed(1);
       else if (e.key === '2') setSpeed(2);
@@ -229,11 +238,8 @@ export default function App() {
       else if (e.key === 'f' || e.key === 'F') setFollow((f) => !f);
       else if (e.key === 't' || e.key === 'T') setShowTrails((t) => !t);
       else if (e.key === 'r' || e.key === 'R') {
-        camRef.current = {
-          x: CONFIG.worldW / 2,
-          y: CONFIG.worldH / 2,
-          zoom: Math.min(canvas.clientWidth / CONFIG.worldW, canvas.clientHeight / CONFIG.worldH) * 0.96,
-        };
+        setFollow(false);
+        camRef.current = { x: CONFIG.worldW / 2, y: CONFIG.worldH / 2, zoom: fitZoom() };
       }
     };
 
@@ -314,7 +320,7 @@ export default function App() {
               </button>
             </span>
           </div>
-          <BrainViz getAnt={() => simRef.current?.selected ?? null} />
+          <BrainViz getAnt={getSelectedAnt} />
         </div>
       )}
 
@@ -336,7 +342,7 @@ export default function App() {
       <div className="panel hint">
         click ant = inspect brain · right-click = drop food
         <br />
-        drag = pan · scroll = zoom · space = pause · 1-4 = speed · F = follow · R = reset view
+        drag = pan · scroll = zoom · space = pause · 1-4 = speed · F = follow · T = trails · R = reset view
       </div>
     </div>
   );
