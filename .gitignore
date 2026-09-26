@@ -10,3 +10,8 @@ build/
 dist/
 *.log
 .env
+
+# OS / editor
+.DS_Store
+.vscode/
+coverage/

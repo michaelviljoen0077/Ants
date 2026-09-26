@@ -5,7 +5,10 @@ neuroevolution, rendered as glowing pheromone networks on a full-screen canvas.
 
 ```bash
 npm install
-npm start        # http://localhost:3000
+npm start          # http://localhost:3000
+npm test           # sim unit tests (Brain, Field, SpatialHash, a smoke run)
+npm run typecheck  # tsc --noEmit
+npm run build      # production bundle in build/
 ```
 
 Tip: `http://localhost:3000/?ff=8000` fast-forwards 8000 ticks before the

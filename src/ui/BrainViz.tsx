@@ -10,6 +10,7 @@ export default function BrainViz({ getAnt }: { getAnt: () => Ant | null }) {
 
   useEffect(() => {
     let alive = true;
+    let raf = 0;
 
     function render() {
       if (!alive) return;
@@ -78,10 +79,13 @@ export default function BrainViz({ getAnt }: { getAnt: () => Ant | null }) {
           }
         }
       }
-      requestAnimationFrame(render);
+      raf = requestAnimationFrame(render);
     }
     render();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+    };
   }, [getAnt]);
 
   return <canvas ref={canvasRef} width={310} height={260} style={{ width: '100%' }} />;
